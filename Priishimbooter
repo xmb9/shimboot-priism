@@ -1,4 +1,10 @@
 #!/bin/bash
+
+if [ "$(id -u)" -ne 0 ]; then
+        echo 'Re-run as root' >&2
+        exit 1
+fi
+
 for cmd in zenity losetup cgpt e2fsck resize2fs parted blkid rsync mktemp mount umount dumpe2fs blockdev lsblk; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd"; exit 1; }
 done
