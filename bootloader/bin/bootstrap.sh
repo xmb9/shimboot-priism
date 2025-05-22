@@ -125,9 +125,9 @@ print_selector() {
   local rootfs_partitions="$1"
   local i=1
 
-  echo "┌──────────────────────┐"
-  echo "│ Shimboot OS Selector │"
-  echo "└──────────────────────┘"
+  echo "┌──────────────────────────┐"
+  echo "│ Priishimboot OS Selector │"
+  echo "└──────────────────────────┘"
 
   if [ "${rootfs_partitions}" ]; then
     for rootfs_partition in $rootfs_partitions; do
@@ -140,7 +140,7 @@ print_selector() {
   else
     echo "no bootable partitions found. please see the shimboot documentation to mark a partition as bootable."
   fi
-
+  echo "If you see any devices here starting with /dev/loop, do not boot them! It could break your shimboot image."
   echo "q) reboot"
   echo "s) enter a shell"
   echo "l) view license"
