@@ -132,6 +132,16 @@ Note: If you are building for an ARM Chromebook, you need the `qemu-user-static`
   7. Run `sudo ./build.sh image.bin path_to_shim data/rootfs` to generate a disk image at `image.bin`. 
 </details>
 
+<details>
+  <summary><b>How do I make it work with Priism?</b></summary>
+
+  1. Run `sudo ./Priishimbooter`. Read the warning and if you're comfortable, press "Yes".
+  2. Select your shimboot image you just built.
+  3. The installer will automatically find your Priism disk (it does need to be plugged in).
+  4. Once prompted, enter the size you want your Shimboot OS (e.g, Debian) to be.
+  5. If at any point you're prompted during e2fsck, press y.
+</details>
+
 ### Booting the Image:
 1. Obtain a shimboot image by downloading a [prebuilt one](https://github.com/ading2210/shimboot/releases) or building it yourself. 
 2. Flash the shimboot image to a USB drive or SD card. Use the [Chromebook Recovery Utility](https://chrome.google.com/webstore/detail/chromebook-recovery-utili/pocpnlppkickgojjlmhdmidojbmbodfm) or [dd](https://linux.die.net/man/1/dd) if you're on Linux.

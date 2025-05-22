@@ -1,0 +1,108 @@
+#!/bin/bash
+for cmd in zenity losetup cgpt e2fsck resize2fs parted blkid rsync mktemp mount umount dumpe2fs blockdev lsblk; do
+  command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd"; exit 1; }
+done
+
+losetup -D
+
+zenity --question \
+  --width=400 \
+  --title="HALT!" \
+  --text="WARNING: This tool is a work in progress.\n\nI, xmb9, am not responsible for any damage caused to your data on both your shimboot image and Priism disk.\n\nAre you sure you want to continue?" \
+  --icon=dialog-warning
+
+if [ $? -ne 0 ]; then
+  echo "User chose not to continue."
+  exit 1
+fi
+
+IMAGE=$(zenity --file-selection --title="Select shimboot image file") || exit 1
+
+loop=$(losetup -Pf --show "$IMAGE")
+echo "Mounted image at loop device: $loop"
+
+shimtemp=$(mktemp -d)
+priism_newroot=$(mktemp -d)
+
+priism_images=$(cgpt find -l PRIISM_IMAGES | head -n 1)
+[ -n "$priism_images" ] || { echo "PRIISM_IMAGES partition not found"; exit 1; }
+
+umount "$priism_images" 2>/dev/null || true
+
+echo "Checking filesystem..."
+
+min_blocks=$(resize2fs -P "$priism_images" 2>/dev/null | awk '{print $NF}')
+block_size=$(dumpe2fs -h "$priism_images" 2>/dev/null | grep 'Block size' | awk '{print $3}')
+min_bytes=$((min_blocks * block_size))
+min_gb=$((min_bytes / 1024 / 1024 / 1024))
+
+total_bytes=$(blockdev --getsize64 "$priism_images")
+total_gb=$((total_bytes / 1024 / 1024 / 1024))
+
+max_shrink=$((total_gb - min_gb))
+if (( max_shrink <= 0 )); then
+    echo "No shrinkable space available."
+    exit 1
+fi
+
+zenity --info --title="Shrink Info" --text="Partition is ${total_gb}GiB total.\nMinimum size allowed: ${min_gb}GiB.\nYou can safely shrink up to: ${max_shrink}GiB."
+
+SHRINK_BY_GB=$(zenity --entry --title="Shrink PRIISM_IMAGES" --text="Enter number of GiB to shrink (max: ${max_shrink}):")
+[[ "$SHRINK_BY_GB" =~ ^[0-9]+$ ]] || { echo "Invalid shrink amount"; exit 1; }
+(( SHRINK_BY_GB > max_shrink )) && { echo "Cannot shrink by more than $max_shrink GiB"; exit 1; }
+
+new_size_gb=$((total_gb - SHRINK_BY_GB))
+new_size_bytes=$((new_size_gb * 1024 * 1024 * 1024))
+
+echo "Shrinking filesystem to ${new_size_gb}GiB..."
+
+disk_dev="/dev/$(lsblk -no pkname "$priism_images")"
+part_num=$(lsblk -no PARTN "$priism_images")
+[ -n "$disk_dev" ] && [ -n "$part_num" ] || { echo "Failed to determine disk and partition number"; exit 1; }
+
+sector_size=$(blockdev --getss "$disk_dev")
+
+start_sector=$(parted "$disk_dev" -ms unit s print | grep "^$part_num:" | cut -d: -f2 | sed 's/s//')
+end_sector=$(parted "$disk_dev" -ms unit s print | grep "^$part_num:" | cut -d: -f3 | sed 's/s//')
+
+current_sectors=$((end_sector - start_sector + 1))
+shrink_sectors=$(( (shrink_gb * 1024 * 1024 * 1024) / sector_size ))
+
+new_sectors=$((current_sectors - shrink_sectors))
+new_end_sector=$((start_sector + new_sectors - 1))
+new_blocks=$(( (new_sectors * sector_size) / 4096 ))
+
+e2fsck -v "$priism_images"
+e2fsck -C 0 -v -f "$priism_images"
+resize2fs "$priism_images" "${new_size_gb}G"
+
+echo "Shrinking partition on disk $disk_dev, partition $part_num"
+((new_size_gb+=1)) # An extra gigabyte used just to be safe.
+echo -e "resizepart $part_num ${new_size_gb}GiB\nyes\nquit" | parted "$disk_dev" ---pretend-input-tty
+
+partprobe "$disk_dev"
+sleep 2
+
+free_start=$(parted -sm "$disk_dev" unit s print free | grep 'free' | tail -n1 | cut -d: -f2 | tr -d 's')
+[ -n "$free_start" ] || { echo "No free space found after shrink."; exit 1; }
+
+echo -e "mkpart shimboot_rootfs:priism ext4 ${free_start}s -1s\nyes\nignore\nquit" | parted "$disk_dev" ---pretend-input-tty
+partprobe "$disk_dev"
+sleep 2
+
+new_part=$(cgpt find -l "shimboot_rootfs:priism" | head -n 1)
+[ -b "$new_part" ] || { echo "New partition not found"; exit 1; }
+
+mkfs.ext4 "$new_part"
+
+mount "${loop}p4" "$shimtemp"
+
+mount "$new_part" "$priism_newroot"
+
+echo "Copying files from image to new partition..."
+rsync -avH --info=progress2 "$shimtemp/" "$priism_newroot/"
+
+echo "Done! Syncing filesystems."
+umount "$shimtemp"
+umount "$priism_newroot"
+losetup -D
