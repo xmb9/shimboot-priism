@@ -140,7 +140,7 @@ print_selector() {
   else
     echo "no bootable partitions found. please see the shimboot documentation to mark a partition as bootable."
   fi
-  echo "If you see any devices here starting with /dev/loop, do not boot them! It could break your shimboot image."
+  echo "(Do not boot partitions on /dev/loopX. You CAN boot them, but you'll run out of storage almost immediately.)"
   echo "q) reboot"
   echo "s) enter a shell"
   echo "l) view license"
