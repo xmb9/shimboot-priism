@@ -54,7 +54,7 @@ find_rootfs_partitions() {
             *[0-9]) part="${dev}p$i" ;;
             *)      part="${dev}$i"  ;;
           esac
-          echo "$part"
+          echo "$label:$part"
         fi
       done
     fi
